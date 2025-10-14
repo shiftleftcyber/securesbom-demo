@@ -130,6 +130,7 @@ jobs:
   verify-sbom:
     name: ✅ Verify Signed SBOM
     runs-on: ubuntu-latest
+    needs: sign-sbom
 
     steps:
       - name: Checkout Repo

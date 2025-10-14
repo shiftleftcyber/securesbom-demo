@@ -123,3 +123,44 @@ jobs:
           echo "### 🔏 SBOM Signed" >> $GITHUB_STEP_SUMMARY
           echo "- SBOM signed using SecureSBOM API" >> $GITHUB_STEP_SUMMARY
           echo "- Signed artifact uploaded [signed-sbom]" >> $GITHUB_STEP_SUMMARY
+
+  # --------------------------------------------------
+  # ✅ Verify Signed SBOM
+  # --------------------------------------------------
+  verify-sbom:
+    name: ✅ Verify Signed SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download Signed SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: signed-sbom
+
+      - name: Verify SBOM
+        id: verify
+        uses: shiftleftcyber/secure-sbom-action@v1.3.1
+        with:
+          sbom_file: demo-app.1.0.0.cdx.signed.json
+          secure_sbom_action: verify
+          api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
+          key_id: ${{ secrets.SECURE_SBOM_KEYID }}
+
+      # --------------------------------------------------
+      # Optional: Enforce Security Gate
+      # --------------------------------------------------
+      - name: Enforce Security Gate (Fail if invalid)
+        if: steps.verify.outcome != 'success'
+        run: |
+          echo "❌ SBOM Verification Failed - Blocking Deployment"
+          exit 1
+
+      - name: Add Job Summary
+        if: steps.verify.outcome == 'success'
+        run: |
+          echo "### ✅ SecureSBOM Demo: Verify Signed SBOM" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM verified successfully using SecureSBOM" >> $GITHUB_STEP_SUMMARY
+          echo "- Integrity and authenticity confirmed ✅" >> $GITHUB_STEP_SUMMARY

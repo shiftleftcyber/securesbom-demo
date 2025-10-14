@@ -73,13 +73,14 @@ jobs:
             -DoutputName=demo-app.1.0.0.cdx
           echo "Generated SBOM:"
           ls -la
+          ls -la target
         shell: bash
 
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
           name: generated-sbom
-          path: demo-app.1.0.0.cdx.json
+          path: target/demo-app.1.0.0.cdx.json
 
       - name: Add Job Summary
         run: |
@@ -104,6 +105,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: generated-sbom
+    
+      - name: Add Job Summary
+        run: |
+          ls -la
 
       - name: Sign SBOM
         uses: shiftleftcyber/secure-sbom-action@v1.3.1

@@ -142,20 +142,31 @@ jobs:
         with:
           name: signed-sbom
 
-      - name: Tamper with SBOM (Modify Log4J version)
+      - name: Tamper with SBOM (Modify line 158)
         run: |
           echo "Simulating malicious modification on line 158..."
           cp demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json
-
-          # Change whatever text appears on line 158 to alter the Log4J version
-          # Example: 2.14.1 → 2.20.0
-          sed -i '158s/2\\.14\\.1/2.20.0/' tampered-demo-app.1.0.0.cdx.signed.json
-
+  
+          # Replace the version text explicitly on line 158 using Python
+          python3 - <<'PYCODE'
+          import fileinput
+          import sys
+  
+          filename = "tampered-demo-app.1.0.0.cdx.signed.json"
+          lines = open(filename).read().splitlines()
+  
+          if len(lines) >= 158:
+            print("Before:", lines[157])
+            lines[157] = lines[157].replace("2.14.1", "2.20.0")
+            print("After: ", lines[157])
+          else:
+            print("⚠️ File shorter than 158 lines!")
+  
+          open(filename, "w").write("\n".join(lines))
+          PYCODE
+  
           echo "✅ Tampering complete. Diff preview:"
           diff -u demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json || true
-
-          echo "Tampered SBOM created (Log4J version modified at line 158)."
-        shell: bash
 
       - name: Upload Tampered SBOM
         uses: actions/upload-artifact@v4

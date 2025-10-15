@@ -92,35 +92,35 @@ jobs:
   # --------------------------------------------------
   osv-scan:
     name: 🔍 OSV Scan (Unsigned SBOM)
-    runs-on: ubuntu-latest
     needs: generate-sbom
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
-
-      - name: Download SBOM
+    
+      - name: Download SBOM Artifact
         uses: actions/download-artifact@v4
         with:
           name: generated-sbom
-
-      - name: Run OSV Scan
-        id: osv
-        run: |
-          echo "Running OSV scan on unsigned SBOM..."
-          docker run --rm -v "${{ github.workspace }}:/scan" ghcr.io/google/osv-scanner:latest \
-            scan /scan/demo-app.1.0.0.cdx.json --format html --output demo-app.1.0.0.osv.html || true
-        shell: bash
-
-      - name: Upload OSV Report
+          path: .
+    
+      - name: Run OSV Scanner Action
+        uses: google/osv-scanner-action@v2.2.3
+        with:
+          scan-args: |-
+            --format html
+            --output demo-app.1.0.0.osv.html
+            demo-app.1.0.0.cdx.json
+        
+      - name: Upload OSV HTML Report
         uses: actions/upload-artifact@v4
         with:
           name: osv-html-report
           path: demo-app.1.0.0.osv.html
-        if: always()
-
+    
       - name: Add Job Summary
         run: |
           echo "### 🔍 OSV Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "- OSV vulnerability scan completed on unsigned SBOM" >> $GITHUB_STEP_SUMMARY
-          echo "- Results available in logs and [osv-scan-report] artifact" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 [HTML Report](./demo-app.1.0.0.osv.html) uploaded as artifact [osv-html-report]" >> $GITHUB_STEP_SUMMARY

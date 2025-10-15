@@ -144,14 +144,18 @@ jobs:
 
       - name: Tamper with SBOM (Modify Log4J version)
         run: |
-          echo "Simulating malicious modification..."
+          echo "Simulating malicious modification on line 158..."
           cp demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json
 
-          # Change the Log4J version in the SBOM to pretend it's patched
-          sed -i 's/2\\.14\\.1/2.20.0/g' tampered-demo-app.1.0.0.cdx.signed.json
+          # Change whatever text appears on line 158 to alter the Log4J version
+          # Example: 2.14.1 → 2.20.0
+          sed -i '158s/2\\.14\\.1/2.20.0/' tampered-demo-app.1.0.0.cdx.signed.json
 
-          echo "Tampered SBOM created (Log4J version changed)"
-          cat tampered-demo-app.1.0.0.cdx.signed.json | head -n 15
+          echo "✅ Tampering complete. Diff preview:"
+          diff -u demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json || true
+
+          echo "Tampered SBOM created (Log4J version modified at line 158)."
+        shell: bash
 
       - name: Upload Tampered SBOM
         uses: actions/upload-artifact@v4

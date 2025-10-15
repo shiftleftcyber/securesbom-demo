@@ -1,4 +1,4 @@
-name: SecureSBOM Demo - Multi-Stage CI/CD (Maven)
+name: SecureSBOM Demo - Tamper Detection & Quality Gate (Maven)
 
 on:
   workflow_dispatch:
@@ -36,7 +36,7 @@ jobs:
 
       - name: Add Job Summary
         run: |
-          echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏗️ Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "- Maven project built successfully" >> $GITHUB_STEP_SUMMARY
           echo "- Artifacts uploaded for SBOM generation" >> $GITHUB_STEP_SUMMARY
 
@@ -124,11 +124,12 @@ jobs:
           echo "- SBOM signed using SecureSBOM API" >> $GITHUB_STEP_SUMMARY
           echo "- Signed artifact uploaded [signed-sbom]" >> $GITHUB_STEP_SUMMARY
 
+
   # --------------------------------------------------
-  # ✅ Verify Signed SBOM
+  # 4️⃣ Tamper SBOM (Simulate Attacker)
   # --------------------------------------------------
-  verify-sbom:
-    name: ✅ Verify Signed SBOM
+  tamper-sbom:
+    name: ⚠️ Tamper SBOM (Simulate Attacker)
     runs-on: ubuntu-latest
     needs: sign-sbom
 
@@ -141,27 +142,96 @@ jobs:
         with:
           name: signed-sbom
 
-      - name: Verify SBOM
+      - name: Tamper with SBOM (Modify Log4J version)
+        run: |
+          echo "Simulating malicious modification..."
+          cp demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json
+
+          # Change the Log4J version in the SBOM to pretend it's patched
+          sed -i 's/2\\.14\\.1/2.20.0/g' tampered-demo-app.1.0.0.cdx.signed.json
+
+          echo "Tampered SBOM created (Log4J version changed)"
+          cat tampered-demo-app.1.0.0.cdx.signed.json | head -n 15
+
+      - name: Upload Tampered SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: tampered-sbom
+          path: tampered-demo-app.1.0.0.cdx.signed.json
+
+      - name: Add Job Summary
+        run: |
+          echo "### ⚠️ Tamper Simulation" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM was modified after signing" >> $GITHUB_STEP_SUMMARY
+          echo "- Log4J version changed to simulate tampering attempt" >> $GITHUB_STEP_SUMMARY
+          echo "- Uploaded as artifact [tampered-sbom]" >> $GITHUB_STEP_SUMMARY
+
+
+  # --------------------------------------------------
+  # 5️⃣ Verify (Tampered) SBOM
+  # --------------------------------------------------
+  verify-sbom:
+    name: ❌ Verify Tampered SBOM
+    runs-on: ubuntu-latest
+    needs: tamper-sbom
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download Tampered SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: tampered-sbom
+
+      - name: Verify Tampered SBOM
         id: verify
         uses: shiftleftcyber/secure-sbom-action@v1.3.1
         with:
-          sbom_file: demo-app.1.0.0.cdx.signed.json
+          sbom_file: tampered-demo-app.1.0.0.cdx.signed.json
           secure_sbom_action: verify
           api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
           key_id: ${{ secrets.SECURE_SBOM_KEYID }}
 
-      # --------------------------------------------------
-      # Optional: Enforce Security Gate
-      # --------------------------------------------------
       - name: Enforce Security Gate (Fail if invalid)
         if: steps.verify.outcome != 'success'
         run: |
-          echo "❌ SBOM Verification Failed - Blocking Deployment"
+          echo "❌ SBOM Verification Failed - Tampering Detected! Blocking Deployment."
           exit 1
 
       - name: Add Job Summary
-        if: steps.verify.outcome == 'success'
+        if: steps.verify.outcome != 'success'
         run: |
-          echo "### ✅ SecureSBOM Demo: Verify Signed SBOM" >> $GITHUB_STEP_SUMMARY
-          echo "- SBOM verified successfully using SecureSBOM" >> $GITHUB_STEP_SUMMARY
-          echo "- Integrity and authenticity confirmed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "### ❌ SecureSBOM Verification Failed" >> $GITHUB_STEP_SUMMARY
+          echo "- Tampered SBOM detected during verification" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔒 Security gate enforced: deployment blocked" >> $GITHUB_STEP_SUMMARY
+
+
+  # --------------------------------------------------
+  # 6️⃣ Simulated Deployment (Blocked)
+  # --------------------------------------------------
+  deploy:
+    name: 🚫 Deployment Blocked
+    runs-on: ubuntu-latest
+    needs: verify-sbom
+    if: always()
+
+    steps:
+      - name: Conditional Deployment Simulation
+        run: |
+          if [ "${{ needs.verify-sbom.result }}" == "success" ]; then
+            echo "🚀 Deployment Approved - SBOM integrity verified!"
+          else
+            echo "⛔ Deployment Blocked - SBOM verification failed."
+            exit 1
+          fi
+
+      - name: Add Job Summary
+        run: |
+          if [ "${{ needs.verify-sbom.result }}" == "success" ]; then
+            echo "### 🚀 Deployment Simulated" >> $GITHUB_STEP_SUMMARY
+            echo "- SBOM verification passed, deployment would proceed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⛔ Deployment Blocked" >> $GITHUB_STEP_SUMMARY
+            echo "- SBOM verification failed" >> $GITHUB_STEP_SUMMARY
+            echo "- Build stopped by quality gate ❌" >> $GITHUB_STEP_SUMMARY

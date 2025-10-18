@@ -17,7 +17,7 @@ It shows how SecureSBOM:
 
 ## 🚀 Usage
 1. Add repository secrets:
-   - `SBOM_API_KEY`
+   - `SECURE_SBOM_API_KEY`
    - `SECURE_SBOM_KEYID`
    - (GitHub automatically provides `GITHUB_TOKEN`)
 2. Trigger the workflow manually under **Actions → SecureSBOM Showcase**.

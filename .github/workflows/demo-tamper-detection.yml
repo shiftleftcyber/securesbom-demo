@@ -161,8 +161,8 @@ jobs:
             print("ERROR: No components found in SBOM")
             sys.exit(1)
 
-          old = "2.14.1"
-          new = "2.20.0"
+          old_version = "2.14.1"
+          new_version = "2.20.0"
 
           modified = False
 

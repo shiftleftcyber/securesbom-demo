@@ -142,29 +142,47 @@ jobs:
         with:
           name: signed-sbom
 
-      - name: Tamper with SBOM (Modify line 158)
+      - name: Tamper Signed SBOM (Change Log4J Version)
         run: |
-          echo "Simulating malicious modification on line 158..."
           cp demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json
   
-          # Replace the version text explicitly on line 158 using Python
+          # Change the version of Log4J in the Signed SBOM
           python3 - <<'PYCODE'
-          import fileinput
+          from pathlib import Path
           import sys
+          import json
   
-          filename = "tampered-demo-app.1.0.0.cdx.signed.json"
-          lines = open(filename).read().splitlines()
-  
-          if len(lines) >= 158:
-            print("Before:", lines[157])
-            lines[157] = lines[157].replace("2.14.1", "2.20.0")
-            print("After: ", lines[157])
-          else:
-            print("⚠️ File shorter than 158 lines!")
-  
-          open(filename, "w").write("\n".join(lines))
+          filename = Path("tampered-demo-app.1.0.0.cdx.signed.json")
+        
+          data = json.loads(filename.read_text())
+
+          components = data.get("components", [])
+          if not components:
+            print("ERROR: No components found in SBOM")
+            sys.exit(1)
+
+          old = "2.14.1"
+          new = "2.20.0"
+
+          modified = False
+
+          for comp in components:
+            if comp.get("version") == old_version:
+              print(f"Before: {comp}")
+              comp["version"] = new_version
+              print(f"After:  {comp}")
+              modified = True
+              break
+
+          if not modified:
+            print(f"ERROR: No component found with version {old_version}")
+            sys.exit(1)
+        
+          # Write back as compact JSON (matches your v2 output style)
+          filename.write_text(json.dumps(data, separators=(",", ":")))
+          print("✅ SBOM tampered successfully")
           PYCODE
-  
+
           echo "✅ Tampering complete. Diff preview:"
           diff -u demo-app.1.0.0.cdx.signed.json tampered-demo-app.1.0.0.cdx.signed.json || true
 

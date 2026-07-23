@@ -4,6 +4,7 @@ This repository demonstrates SecureSBOM in a real CI/CD workflow using a Maven p
 It shows how SecureSBOM:
 - Generates SBOMs using CycloneDX
 - Signs and verifies SBOMs via `shiftleftcyber/secure-sbom-action`
+- Demonstrates interoperability by signing SBOMs and SBOM digests with ReARM actions, then verifying with SecureSBOM tooling
 - Detects tampering (modifications post-signing)
 - Enforces security gates before deployment
 - Automatically signs SBOMs during GitHub releases
@@ -12,17 +13,21 @@ It shows how SecureSBOM:
 ## 🧱 Structure
 - `demo-app/` — Maven project with Log4J 2.14.1
 - `.github/workflows/secure-sbom-showcase-maven.yml` — Main CI/CD workflow
+- `.github/workflows/demo-rearm-securesbom-interoperability.yml` — ReARM signing and SecureSBOM verification interoperability workflow
 - `osv-report-template.html` — Dark terminal-themed SecureSBOM CI/CD report
 - `README.md` — You are here 😎
 
 ## 🚀 Usage
 1. Add repository secrets:
    - `SECURE_SBOM_API_KEY`
-   - `SECURE_SBOM_KEYID`
-   - (GitHub automatically provides `GITHUB_TOKEN`)
-2. Trigger the workflow manually under **Actions → SecureSBOM Showcase**.
-3. Watch the results:
+2. Add repository variables:
+   - `SECURE_SBOM_SIGNING_KEY_ID`
+   - `SECURE_SBOM_API_URL` (optional; workflows default to the production SecureSBOM API when unset)
+3. GitHub automatically provides `GITHUB_TOKEN`.
+4. Trigger the workflow manually under **Actions → SecureSBOM Showcase** or **Actions → SecureSBOM Demo - ReARM Interoperability**.
+5. Watch the results:
    - Signed SBOM artifacts
+   - ReARM-generated SBOMs signed in embedded and digest modes
    - Verification pass/fail
    - OSV scan logs
    - Tamper detection

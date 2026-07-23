@@ -1,0 +1,181 @@
+name: SecureSBOM Demo - ReARM Interoperability
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DEMO_IMAGE_FULL_NAME: securesbom-demo/demo-app
+  DEMO_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  SECURE_SBOM_API_URL: ${{ vars.SECURE_SBOM_API_URL || 'https://secure-sbom-api-prod-gateway-dhncnyq8.uc.gateway.dev' }}
+
+jobs:
+  rearm-embedded-signing:
+    name: ReARM signs SBOM, SecureSBOM action verifies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build Maven project
+        run: mvn -B clean verify -DskipTests
+        shell: bash
+
+      - name: Generate and sign SBOM with ReARM SecureSBOM v2 branch
+        uses: shiftleftcyber/rearm-actions/sbom-sign-scan@feature/securesbom-v2-signing
+        with:
+          image_full_name: ${{ env.DEMO_IMAGE_FULL_NAME }}
+          image_digest: ${{ env.DEMO_IMAGE_DIGEST }}
+          rearm_short_version: rearm-securesbom-interoperability
+          rearm_full_version: rearm-securesbom-interoperability-${{ github.run_id }}
+          deliverable_type: FILE
+          enable_sbom: 'true'
+          source_code_sbom_type: other
+          enable_securesbom: 'true'
+          securesbom_pub_key_id: ${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}
+          securesbom_host: ${{ env.SECURE_SBOM_API_URL }}
+          securesbom_api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
+          extract_commit_signature: 'false'
+
+      - name: Preserve ReARM signed SBOM artifacts
+        run: |
+          mv fs.cdx.bom.json rearm-embedded-signed-sbom.json
+          mv fs-bom-securesbom-public-key.pem rearm-embedded-public-key.pem
+          test -s rearm-embedded-signed-sbom.json
+          test -s rearm-embedded-public-key.pem
+        shell: bash
+
+      - name: Verify ReARM signed SBOM with SecureSBOM action
+        id: verify-sbom
+        uses: shiftleftcyber/secure-sbom-action@v2.4.0
+        with:
+          sbom_file: rearm-embedded-signed-sbom.json
+          secure_sbom_action: verify_sbom
+          secure_sbom_api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
+          secure_sbom_signing_key_id: ${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}
+          secure_sbom_api_url: ${{ env.SECURE_SBOM_API_URL }}
+
+      - name: Upload embedded signing artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: rearm-embedded-signing
+          path: |
+            rearm-embedded-signed-sbom.json
+            rearm-embedded-public-key.pem
+          if-no-files-found: error
+
+      - name: Add embedded signing summary
+        run: |
+          echo "### ReARM embedded SBOM signing verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SBOM generated and signed by rearm-actions/sbom-sign-scan@feature/securesbom-v2-signing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Signed SBOM verified by shiftleftcyber/secure-sbom-action@v2.4.0" >> "$GITHUB_STEP_SUMMARY"
+
+  rearm-digest-signing:
+    name: ReARM signs digest, SecureSBOM API verifies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build Maven project
+        run: mvn -B clean verify -DskipTests
+        shell: bash
+
+      - name: Generate SBOM and sign digest with ReARM branch
+        uses: shiftleftcyber/rearm-actions/sbom-sign-scan@feature/securesbom-digest-signing
+        with:
+          image_full_name: ${{ env.DEMO_IMAGE_FULL_NAME }}
+          image_digest: ${{ env.DEMO_IMAGE_DIGEST }}
+          rearm_short_version: rearm-securesbom-digest-interoperability
+          rearm_full_version: rearm-securesbom-digest-interoperability-${{ github.run_id }}
+          deliverable_type: FILE
+          enable_sbom: 'true'
+          source_code_sbom_type: other
+          enable_securesbom: 'true'
+          securesbom_signing_mode: digest
+          securesbom_pub_key_id: ${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}
+          securesbom_host: ${{ env.SECURE_SBOM_API_URL }}
+          securesbom_api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
+          extract_commit_signature: 'false'
+
+      - name: Preserve ReARM digest signing artifacts
+        run: |
+          mv fs.cdx.bom.json rearm-digest-sbom.json
+          mv fs-bom-securesbom-digest.sig rearm-digest-signature.b64
+          mv fs-bom-securesbom-public-key.pem rearm-digest-public-key.pem
+          test -s rearm-digest-sbom.json
+          test -s rearm-digest-signature.b64
+          test -s rearm-digest-public-key.pem
+        shell: bash
+
+      - name: Prepare digest verification request
+        id: digest
+        run: |
+          digest="$(openssl dgst -sha256 -binary rearm-digest-sbom.json | base64 | tr -d '\n')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+          node -e '
+            const fs = require("fs");
+            const [outputPath, keyId, digest, signaturePath] = process.argv.slice(1);
+            const signature = fs.readFileSync(signaturePath, "utf8").trim();
+            if (!signature) {
+              throw new Error("ReARM digest signature artifact is empty");
+            }
+            fs.writeFileSync(outputPath, JSON.stringify({
+              key_id: keyId,
+              digest,
+              hash_algorithm: "sha256",
+              signature
+            }));
+          ' verify-digest-request.json "${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}" "$digest" rearm-digest-signature.b64
+        shell: bash
+
+      - name: Verify ReARM digest signature with SecureSBOM API
+        run: |
+          curl --fail --silent --show-error --location "${SECURE_SBOM_API_URL}/api/v1/digest/verify" \
+            --header "X-API-Key: ${{ secrets.SECURE_SBOM_API_KEY }}" \
+            --header "Content-Type: application/json" \
+            --data-binary "@verify-digest-request.json" \
+            --output verify-digest-response.json
+
+          node -e '
+            const fs = require("fs");
+            const response = JSON.parse(fs.readFileSync("verify-digest-response.json", "utf8"));
+            if (!response.verified) {
+              throw new Error(`SecureSBOM digest verification failed: ${JSON.stringify(response)}`);
+            }
+            console.log("SecureSBOM digest verification response:", JSON.stringify(response));
+          '
+        shell: bash
+
+      - name: Upload digest signing artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: rearm-digest-signing
+          path: |
+            rearm-digest-sbom.json
+            rearm-digest-signature.b64
+            rearm-digest-public-key.pem
+            verify-digest-response.json
+          if-no-files-found: error
+
+      - name: Add digest signing summary
+        run: |
+          echo "### ReARM digest signing verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SBOM generated by rearm-actions/sbom-sign-scan@feature/securesbom-digest-signing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Only the base64 SHA-256 digest was sent for signing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest signature verified through the SecureSBOM verify-digest API" >> "$GITHUB_STEP_SUMMARY"

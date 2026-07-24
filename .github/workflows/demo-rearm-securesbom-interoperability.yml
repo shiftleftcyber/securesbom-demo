@@ -55,19 +55,25 @@ jobs:
           test -s rearm-detached-public-key.pem
         shell: bash
 
-      - name: Prepare SBOM verification request
+      - name: Prepare CycloneDX detached verification request
         run: |
-          jq \
-            --slurpfile signature rearm-detached-signature.json \
-            '. + {signature: $signature[0]}' \
-            rearm-detached-sbom.json > rearm-detached-verification-sbom.json
+          jq -e '
+            (.bomFormat | ascii_downcase) == "cyclonedx" and
+            has("signature") | not
+          ' rearm-detached-sbom.json >/dev/null
+
+          jq -e '
+            (.value | type) == "string" and
+            (.value | length) > 0
+          ' rearm-detached-signature.json >/dev/null
 
           jq -n \
             --arg key_id "${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}" \
-            --slurpfile sbom rearm-detached-verification-sbom.json \
+            --slurpfile sbom rearm-detached-sbom.json \
+            --slurpfile signature rearm-detached-signature.json \
             '{
               key_id: $key_id,
-              sbom: $sbom[0]
+              sbom: ($sbom[0] + {signature: $signature[0]})
             }' > verify-detached-sbom-request.json
 
           jq -e '.sbom.signature.value | type == "string" and length > 0' verify-detached-sbom-request.json >/dev/null
@@ -92,8 +98,8 @@ jobs:
           path: |
             rearm-detached-sbom.json
             rearm-detached-signature.json
-            rearm-detached-verification-sbom.json
             rearm-detached-public-key.pem
+            verify-detached-sbom-request.json
             verify-detached-sbom-response.json
           if-no-files-found: error
 
@@ -102,7 +108,7 @@ jobs:
           echo "### ReARM detached SBOM signing verified" >> "$GITHUB_STEP_SUMMARY"
           echo "- SBOM generated and signed by rearm-actions/sbom-sign-scan@feature/securesbom-v2-signing" >> "$GITHUB_STEP_SUMMARY"
           echo "- ReARM output remains detached: SBOM, signature, and public key are separate artifacts" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SecureSBOM currently verifies CycloneDX signatures through the root JSF field, so the workflow reattaches the detached signature to a temporary verification copy before calling the v2 verify API" >> "$GITHUB_STEP_SUMMARY"
+          echo "- The verify request mirrors the SecureSBOM SDK: original CycloneDX SBOM plus the detached JSF signature object, sent to the v2 verify API without signature_b64" >> "$GITHUB_STEP_SUMMARY"
 
   rearm-digest-signing:
     name: ReARM signs digest, SecureSBOM API verifies

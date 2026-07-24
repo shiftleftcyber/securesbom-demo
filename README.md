@@ -35,4 +35,4 @@ It shows how SecureSBOM:
 
 > **Note:** This demo intentionally includes a vulnerable dependency (Log4J 2.14.1) for educational purposes only. Do not deploy this code in production.
 
-The ReARM interoperability workflow keeps the CycloneDX SBOM signature detached as the published artifact. Because SecureSBOM's current CycloneDX verifier expects the JSF signature at the SBOM root, the workflow creates a temporary verification-only SBOM copy with the detached signature reattached before calling the SecureSBOM v2 verify API.
+The ReARM interoperability workflow keeps the CycloneDX SBOM signature detached as the published artifact. For verification, it mirrors the SecureSBOM SDK CLI behavior: the workflow builds the v2 verify API request from the original CycloneDX SBOM plus the detached JSF signature object, without using `signature_b64`.

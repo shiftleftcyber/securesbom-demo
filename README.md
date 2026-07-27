@@ -4,7 +4,7 @@ This repository demonstrates SecureSBOM in a real CI/CD workflow using a Maven p
 It shows how SecureSBOM:
 - Generates SBOMs using CycloneDX
 - Signs and verifies SBOMs via `shiftleftcyber/secure-sbom-action`
-- Demonstrates interoperability by signing SBOMs and SBOM digests with ReARM actions, then verifying with SecureSBOM tooling
+- Demonstrates interoperability by signing SBOMs and SBOM digests with ReARM actions, then verifying them with SecureSBOM APIs
 - Detects tampering (modifications post-signing)
 - Enforces security gates before deployment
 - Automatically signs SBOMs during GitHub releases
@@ -27,10 +27,12 @@ It shows how SecureSBOM:
 4. Trigger the workflow manually under **Actions → SecureSBOM Showcase** or **Actions → SecureSBOM Demo - ReARM Interoperability**.
 5. Watch the results:
    - Signed SBOM artifacts
-   - ReARM-generated SBOMs signed in embedded and digest modes
+   - ReARM-generated SBOMs signed in detached SBOM and digest modes
    - Verification pass/fail
    - OSV scan logs
    - Tamper detection
    - Pretty HTML report in summary or downloadable artifact
 
 > **Note:** This demo intentionally includes a vulnerable dependency (Log4J 2.14.1) for educational purposes only. Do not deploy this code in production.
+
+The ReARM interoperability workflow keeps the CycloneDX SBOM signature detached as the published artifact. For verification, it mirrors the SecureSBOM SDK CLI behavior: the workflow builds the v2 verify API request from the original CycloneDX SBOM plus the detached JSF signature object, without using `signature_b64`.

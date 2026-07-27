@@ -12,8 +12,8 @@ env:
   SECURE_SBOM_API_URL: ${{ vars.SECURE_SBOM_API_URL || 'https://secure-sbom-api-prod-gateway-dhncnyq8.uc.gateway.dev' }}
 
 jobs:
-  rearm-embedded-signing:
-    name: ReARM signs SBOM, SecureSBOM action verifies
+  rearm-detached-sbom-signing:
+    name: ReARM signs SBOM, SecureSBOM API verifies
     runs-on: ubuntu-latest
 
     steps:
@@ -45,38 +45,70 @@ jobs:
           securesbom_api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
           extract_commit_signature: 'false'
 
-      - name: Preserve ReARM signed SBOM artifacts
+      - name: Preserve ReARM detached SBOM signing artifacts
         run: |
-          mv fs.cdx.bom.json rearm-embedded-signed-sbom.json
-          mv fs-bom-securesbom-public-key.pem rearm-embedded-public-key.pem
-          test -s rearm-embedded-signed-sbom.json
-          test -s rearm-embedded-public-key.pem
+          mv fs.cdx.bom.json rearm-detached-sbom.json
+          mv fs-bom-securesbom-signature.json rearm-detached-signature.json
+          mv fs-bom-securesbom-public-key.pem rearm-detached-public-key.pem
+          test -s rearm-detached-sbom.json
+          test -s rearm-detached-signature.json
+          test -s rearm-detached-public-key.pem
         shell: bash
 
-      - name: Verify ReARM signed SBOM with SecureSBOM action
-        id: verify-sbom
-        uses: shiftleftcyber/secure-sbom-action@v2.4.0
-        with:
-          sbom_file: rearm-embedded-signed-sbom.json
-          secure_sbom_action: verify_sbom
-          secure_sbom_api_key: ${{ secrets.SECURE_SBOM_API_KEY }}
-          secure_sbom_signing_key_id: ${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}
-          secure_sbom_api_url: ${{ env.SECURE_SBOM_API_URL }}
+      - name: Prepare CycloneDX detached verification request
+        run: |
+          jq -e '
+            (.bomFormat | ascii_downcase) == "cyclonedx" and
+            has("signature") | not
+          ' rearm-detached-sbom.json >/dev/null
 
-      - name: Upload embedded signing artifacts
+          jq -e '
+            (.value | type) == "string" and
+            (.value | length) > 0
+          ' rearm-detached-signature.json >/dev/null
+
+          jq -n \
+            --arg key_id "${{ vars.SECURE_SBOM_SIGNING_KEY_ID }}" \
+            --slurpfile sbom rearm-detached-sbom.json \
+            --slurpfile signature rearm-detached-signature.json \
+            '{
+              key_id: $key_id,
+              sbom: ($sbom[0] + {signature: $signature[0]})
+            }' > verify-detached-sbom-request.json
+
+          jq -e '.sbom.signature.value | type == "string" and length > 0' verify-detached-sbom-request.json >/dev/null
+        shell: bash
+
+      - name: Verify ReARM signed SBOM with SecureSBOM API
+        id: verify-sbom
+        run: |
+          curl --fail --silent --show-error --location "${SECURE_SBOM_API_URL}/api/v2/sbom/verify" \
+            --header "X-API-Key: ${{ secrets.SECURE_SBOM_API_KEY }}" \
+            --header "Content-Type: application/json" \
+            --data-binary "@verify-detached-sbom-request.json" \
+            --output verify-detached-sbom-response.json
+
+          jq . verify-detached-sbom-response.json
+        shell: bash
+
+      - name: Upload detached SBOM signing artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: rearm-embedded-signing
+          name: rearm-detached-sbom-signing
           path: |
-            rearm-embedded-signed-sbom.json
-            rearm-embedded-public-key.pem
+            rearm-detached-sbom.json
+            rearm-detached-signature.json
+            rearm-detached-public-key.pem
+            verify-detached-sbom-request.json
+            verify-detached-sbom-response.json
           if-no-files-found: error
 
-      - name: Add embedded signing summary
+      - name: Add detached SBOM signing summary
         run: |
-          echo "### ReARM embedded SBOM signing verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ReARM detached SBOM signing verified" >> "$GITHUB_STEP_SUMMARY"
           echo "- SBOM generated and signed by rearm-actions/sbom-sign-scan@feature/securesbom-v2-signing" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Signed SBOM verified by shiftleftcyber/secure-sbom-action@v2.4.0" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ReARM output remains detached: SBOM, signature, and public key are separate artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- The verify request mirrors the SecureSBOM SDK: original CycloneDX SBOM plus the detached JSF signature object, sent to the v2 verify API without signature_b64" >> "$GITHUB_STEP_SUMMARY"
 
   rearm-digest-signing:
     name: ReARM signs digest, SecureSBOM API verifies
